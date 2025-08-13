@@ -1,5 +1,3 @@
-cd ~/Desktop/affiliate-landing-builder
-cat > netlify/functions/generate-content.js << 'EOF'
 const https = require('https');
 
 exports.handler = async (event, context) => {
@@ -17,86 +15,78 @@ exports.handler = async (event, context) => {
   }
 
   if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }) 
-    };
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   try {
-    const data = JSON.parse(event.body);
-    const apiKey = data.apiKey;
-    const prompt = data.prompt;
+    const { apiKey, prompt, model } = JSON.parse(event.body || '{}');
 
     if (!apiKey) {
-      return { 
-        statusCode: 400, 
-        headers,
-        body: JSON.stringify({ error: 'API key required' }) 
-      };
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing API key' }) };
     }
 
-    // Make request to Claude using https module
-    const requestData = JSON.stringify({
-      model: 'claude-3-sonnet-20240229',
+    const chosenModel = (model && String(model).trim()) || 'claude-3-5-sonnet-20240620';
+
+    const payload = JSON.stringify({
+      model: chosenModel,
       max_tokens: 2000,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt || 'Test' }]
     });
 
-    const result = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'api.anthropic.com',
-        path: '/v1/messages',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Length': Buffer.byteLength(requestData)
-        }
-      };
+    const options = {
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey.trim(),
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
 
+    const result = await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let data = '';
-        
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        
+        res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
-          if (res.statusCode === 200) {
-            resolve(JSON.parse(data));
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              reject(new Error(`Parse error: ${e.message}`));
+            }
           } else {
-            reject(new Error(`API error: ${res.statusCode} - ${data}`));
+            reject(new Error(`Anthropic ${res.statusCode}: ${data}`));
           }
         });
       });
-
-      req.on('error', (error) => {
-        reject(error);
-      });
-
-      req.write(requestData);
+      req.on('error', (error) => reject(error));
+      req.write(payload);
       req.end();
     });
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify(result)
-    };
+    return { statusCode: 200, headers, body: JSON.stringify(result) };
 
   } catch (error) {
     console.error('Error:', error);
+    let message = error.message || 'Function error';
+    try {
+      const match = /Anthropic\s(\d+):\s([\s\S]+)/.exec(message);
+      if (match) {
+        const status = match[1];
+        const raw = match[2];
+        const parsed = JSON.parse(raw);
+        message = parsed?.error?.message || parsed?.message || message;
+      }
+    } catch (_) {}
     return { 
       statusCode: 500, 
       headers,
       body: JSON.stringify({ 
         error: 'Function error', 
-        message: error.message 
+        message 
       }) 
     };
   }
 };
-EOF

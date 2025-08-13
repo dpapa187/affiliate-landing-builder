@@ -764,13 +764,7 @@
                 showNotification('Please enter an API key', 'error');
                 return;
             }
-
-            if (!apiKey.startsWith('sk-ant-')) {
-                showNotification('Invalid API key format', 'error');
-                return;
-            }
-
-            // Test the API key through our Netlify function
+// Test the API key through our Netlify function
             try {
                 const response = await fetch('/.netlify/functions/generate-content', {
                     method: 'POST',
@@ -790,8 +784,18 @@
                     document.getElementById('clearBtn').style.display = 'inline-block';
                     showNotification('API key connected successfully!', 'success');
                 } else {
-                    throw new Error('Invalid API key');
-                }
+} else {
+    const text = await response.text();
+    let errMsg = 'Failed to connect. Check your API key.';
+    try {
+        const err = JSON.parse(text);
+        if (err && (err.message || err.error)) {
+            errMsg = `Connection failed: ${err.message || err.error}`;
+        }
+    } catch (_) {}
+    showNotification(errMsg, 'error');
+}
+}
             } catch (error) {
                 showNotification('Failed to connect. Check your API key.', 'error');
             }
