@@ -1,15 +1,21 @@
+cd ~/Desktop/affiliate-landing-builder
+cat > netlify/functions/generate-content.js << 'EOF'
 exports.handler = async (event, context) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
-  if (!CLAUDE_API_KEY) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'API key not configured' }) };
-  }
-
   try {
     const data = JSON.parse(event.body);
+    
+    // Get API key from the request (user provides it)
+    const CLAUDE_API_KEY = data.apiKey;
+    
+    if (!CLAUDE_API_KEY || !CLAUDE_API_KEY.startsWith('sk-ant-')) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Valid API key required' }) };
+    }
+
+    // Call Claude API with user's key
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -25,6 +31,7 @@ exports.handler = async (event, context) => {
     });
 
     const result = await response.json();
+    
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -34,3 +41,4 @@ exports.handler = async (event, context) => {
     return { statusCode: 500, body: JSON.stringify({ error: 'Failed to generate content' }) };
   }
 };
+EOF
